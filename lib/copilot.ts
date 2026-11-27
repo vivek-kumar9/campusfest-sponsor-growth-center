@@ -60,16 +60,15 @@ export async function llmCheck() {
   if (!KEY()) return { configured: false };
   let available: string[] = [];
   try {
-    const r = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${KEY()}` } });
+    const r = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${KEY()}` }, signal: AbortSignal.timeout(8000) });
     const j: any = await r.json().catch(() => ({}));
     available = (j.data || []).map((m: any) => String(m.id || "").replace(/^models\//, "")).filter((id: string) => /flash|pro/.test(id)).slice(0, 60);
   } catch {}
-  const results = [];
-  for (const m of CANDIDATE_MODELS()) {
+  const results = await Promise.all(CANDIDATE_MODELS().map(async (m) => {
     const t0 = Date.now();
-    try { await chat([{ role: "user", content: "Reply with the word ok." }], null, m, false, 15000); results.push({ model: m, ok: true, ms: Date.now() - t0 }); }
-    catch (e: any) { results.push({ model: m, ok: false, status: e.status, ms: Date.now() - t0, error: String(e.message).slice(0, 200) }); }
-  }
+    try { await chat([{ role: "user", content: "Reply with the word ok." }], null, m, false, 12000); return { model: m, ok: true, ms: Date.now() - t0 }; }
+    catch (e: any) { return { model: m, ok: false, status: e.status, ms: Date.now() - t0, error: String(e.message).slice(0, 160) }; }
+  }));
   return { configured: true, base: BASE, preferred, available, results };
 }
 
