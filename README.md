@@ -5,7 +5,7 @@ Author: Vivek Kumar, IIT Delhi.
 
 The repo contains the working product (dashboard, campaign and task management, embedded AI growth analyst) and the research, model and calculations behind the 3-slide strategy.
 
-- Live app: _add your Vercel URL here_
+- Live app: https://campusfest-sponsor-growth-center.vercel.app (Vercel + Neon Postgres + Gemini)
 - Strategy deck: 3 slides (PDF, submitted separately)
 
 ---
