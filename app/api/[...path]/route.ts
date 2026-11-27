@@ -5,12 +5,13 @@ import * as M from "@/lib/mutations";
 import { resetAll } from "@/lib/seed";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type H = (req: NextRequest, parts: string[], body: any) => Promise<any>;
 const asOf = (req: NextRequest) => req.nextUrl.searchParams.get("asOf") || null;
 
 const GET_T: Record<string, H> = {
+  async "llm-check"() { const { llmCheck } = await import("@/lib/copilot"); return llmCheck(); },
   async health() { const db = await getDb(); const m = await q(`select * from meta`); return { ok: true, db: db.mode, persistent: db.mode === "postgres" || !process.env.VERCEL, meta: m, llm: !!(process.env.GEMINI_API_KEY || process.env.LLM_API_KEY) }; },
   async overview(req) { return A.overview(await A.resolveCtx(asOf(req))); },
   async funnel(req) { return A.funnel(await A.resolveCtx(asOf(req)), req.nextUrl.searchParams.get("groupBy") || "none"); },

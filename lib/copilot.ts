@@ -5,28 +5,72 @@ import { istNow, istDate } from "./seed";
 // ---------- LLM client (OpenAI-compatible; default = Gemini's OpenAI endpoint) ----------
 const BASE = (process.env.LLM_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/$/, "");
 const KEY = () => process.env.LLM_API_KEY || process.env.GEMINI_API_KEY || "";
-const MODELS = () => Array.from(new Set([process.env.LLM_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"]));
+export const CANDIDATE_MODELS = () => Array.from(new Set([
+  ...(process.env.LLM_MODEL || process.env.GEMINI_MODEL ? [String(process.env.LLM_MODEL || process.env.GEMINI_MODEL)] : []),
+  "gemini-flash-latest", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite",
+]));
+// remembered across requests on a warm instance, so a failing model is not retried on every call
+let preferred: { model: string; reasoning: boolean } | null = null;
+const badUntil: Record<string, number> = {};
 
-async function chat(messages: any[], tools: any[] | null, model: string, reasoning: boolean) {
+async function chat(messages: any[], tools: any[] | null, model: string, reasoning: boolean, timeoutMs: number, toolChoice: "auto" | "none" = "auto") {
   const body: any = { model, messages, temperature: 0.2 };
-  if (tools) { body.tools = tools; body.tool_choice = "auto"; }
+  if (tools) { body.tools = tools; body.tool_choice = toolChoice; }
   if (reasoning) body.reasoning_effort = "low";
-  const res = await fetch(`${BASE}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${KEY()}` }, body: JSON.stringify(body) });
-  const text = await res.text();
-  if (!res.ok) { const err: any = new Error(`LLM ${res.status}: ${text.slice(0, 300)}`); err.status = res.status; throw err; }
-  return JSON.parse(text);
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), Math.max(3000, timeoutMs));
+  try {
+    const res = await fetch(`${BASE}/chat/completions`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", authorization: `Bearer ${KEY()}` }, body: JSON.stringify(body) });
+    const text = await res.text();
+    if (!res.ok) { const err: any = new Error(`LLM ${res.status}: ${text.slice(0, 300)}`); err.status = res.status; throw err; }
+    return JSON.parse(text);
+  } catch (e: any) {
+    if (e?.name === "AbortError") { const err: any = new Error(`LLM timeout after ${Math.round(timeoutMs / 1000)}s`); err.status = 408; throw err; }
+    throw e;
+  } finally { clearTimeout(timer); }
 }
 
-async function chatWithFallback(messages: any[], tools: any[] | null, state: { model?: string; reasoning: boolean }) {
+async function chatWithFallback(messages: any[], tools: any[] | null, state: { model?: string; reasoning: boolean; deadline: number; errors: string[] }, toolChoice: "auto" | "none" = "auto") {
   let lastErr: any;
-  const models = state.model ? [state.model, ...MODELS().filter((m) => m !== state.model)] : MODELS();
-  for (const m of models) {
-    for (const reasoning of state.reasoning ? [true, false] : [false]) {
-      try { const r = await chat(messages, tools, m, reasoning); state.model = m; state.reasoning = reasoning; return r; }
-      catch (e: any) { lastErr = e; if (e.status === 400 && reasoning) continue; if ([404, 400, 429, 500, 503].includes(e.status)) break; throw e; }
+  const start = state.model ? [{ model: state.model, reasoning: state.reasoning }] : preferred ? [preferred] : [];
+  const order = [...start, ...CANDIDATE_MODELS().filter((m) => !start.some((x) => x.model === m)).map((m) => ({ model: m, reasoning: true }))];
+  for (const cand of order) {
+    if ((badUntil[cand.model] || 0) > Date.now() && cand.model !== state.model) continue;
+    for (const reasoning of cand.reasoning ? [true, false] : [false]) {
+      const left = state.deadline - Date.now();
+      if (left < 4000) throw lastErr || new Error("Out of time");
+      try {
+        const r = await chat(messages, tools, cand.model, reasoning, Math.min(25000, left - 1000), toolChoice);
+        state.model = cand.model; state.reasoning = reasoning; preferred = { model: cand.model, reasoning };
+        return r;
+      } catch (e: any) {
+        lastErr = e; state.errors.push(`${cand.model}${reasoning ? "+reasoning" : ""}: ${String(e.message).slice(0, 120)}`);
+        if (e.status === 400 && reasoning) continue; // retry the same model without reasoning_effort
+        if ([404, 400, 403].includes(e.status)) badUntil[cand.model] = Date.now() + 30 * 60e3;
+        if (e.status === 429 || e.status === 408 || e.status >= 500) badUntil[cand.model] = Date.now() + 60e3;
+        if (preferred?.model === cand.model) preferred = null;
+        break;
+      }
     }
   }
-  throw lastErr;
+  throw lastErr || new Error("No model available");
+}
+
+/** Diagnostics: which models this API key can use right now (tiny prompt, no tools). */
+export async function llmCheck() {
+  if (!KEY()) return { configured: false };
+  let available: string[] = [];
+  try {
+    const r = await fetch(`${BASE}/models`, { headers: { authorization: `Bearer ${KEY()}` } });
+    const j: any = await r.json().catch(() => ({}));
+    available = (j.data || []).map((m: any) => String(m.id || "").replace(/^models\//, "")).filter((id: string) => /flash|pro/.test(id)).slice(0, 60);
+  } catch {}
+  const results = [];
+  for (const m of CANDIDATE_MODELS()) {
+    const t0 = Date.now();
+    try { await chat([{ role: "user", content: "Reply with the word ok." }], null, m, false, 15000); results.push({ model: m, ok: true, ms: Date.now() - t0 }); }
+    catch (e: any) { results.push({ model: m, ok: false, status: e.status, ms: Date.now() - t0, error: String(e.message).slice(0, 200) }); }
+  }
+  return { configured: true, base: BASE, preferred, available, results };
 }
 
 // ---------- tools ----------
@@ -228,17 +272,21 @@ export async function runCopilot(body: { messages: { role: string; content: stri
     .map((m) => ({ role: m.role, content: m.content.slice(0, 6000) }));
   if (!history.length || history[history.length - 1].role !== "user") return { reply: "Ask me something about the sponsorship campaign.", trace: [], proposals: [] };
   const sess = { proposals: [] as any[], asOfDefault: asOf };
+  const started = Date.now();
   const trace: any[] = [];
   if (!KEY()) return offline(history[history.length - 1].content, asOf, "No LLM API key is configured (set GEMINI_API_KEY).");
   const messages: any[] = [{ role: "system", content: systemPrompt(asOf) }, ...history];
-  const state: { model?: string; reasoning: boolean } = { reasoning: true };
+  const state: { model?: string; reasoning: boolean; deadline: number; errors: string[] } = { reasoning: true, deadline: Date.now() + 52000, errors: [] };
   try {
-    for (let step = 0; step < 7; step++) {
-      const res = await chatWithFallback(messages, step < 6 ? TOOLS : null, state);
+    for (let step = 0; step < 6; step++) {
+      const lowOnTime = state.deadline - Date.now() < 15000;
+      if (lowOnTime) messages.push({ role: "user", content: "(System: time is nearly up. Answer now from the tool results you already have; do not call more tools.)" });
+      const final = step >= 5 || lowOnTime;
+      const res = await chatWithFallback(messages, TOOLS, state, final ? "none" : "auto");
       const msg = res.choices?.[0]?.message;
       if (!msg) throw new Error("Empty LLM response");
       const calls = msg.tool_calls || [];
-      if (!calls.length) return { reply: (msg.content || "").trim() || "(no answer)", trace, proposals: sess.proposals, model: state.model, as_of: asOf };
+      if (!calls.length) return { reply: (msg.content || "").trim() || "(no answer)", trace, proposals: sess.proposals, model: state.model, as_of: asOf, ms: Date.now() - started };
       calls.forEach((c: any, i: number) => { if (!c.id) c.id = `call_${step}_${i}`; });
       messages.push({ ...msg, content: msg.content ?? "", tool_calls: calls });
       for (const c of calls) {
@@ -252,6 +300,7 @@ export async function runCopilot(body: { messages: { role: string; content: stri
     }
     return { reply: "I ran out of analysis steps. Try a narrower question.", trace, proposals: sess.proposals, model: state.model, as_of: asOf };
   } catch (e: any) {
+    console.error("copilot LLM failure", state.errors);
     const o: any = await offline(history[history.length - 1].content, asOf, `The AI model is unavailable right now (${String(e?.message || e).slice(0, 160)}).`);
     o.trace = [...trace, ...o.trace]; o.proposals = [...sess.proposals, ...(o.proposals || [])];
     return o;
