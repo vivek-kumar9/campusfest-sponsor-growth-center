@@ -11,6 +11,8 @@ type H = (req: NextRequest, parts: string[], body: any) => Promise<any>;
 const asOf = (req: NextRequest) => req.nextUrl.searchParams.get("asOf") || null;
 
 const GET_T: Record<string, H> = {
+  // GET variant for quick manual checks: /api/ask?q=...&asOf=YYYY-MM-DD
+  async ask(req) { const { runCopilot } = await import("@/lib/copilot"); const qs = req.nextUrl.searchParams; return runCopilot({ messages: [{ role: "user", content: String(qs.get("q") || "").slice(0, 500) }], asOf: qs.get("asOf") }); },
   async "llm-check"() { const { llmCheck } = await import("@/lib/copilot"); return llmCheck(); },
   async health() { const db = await getDb(); const m = await q(`select * from meta`); return { ok: true, db: db.mode, persistent: db.mode === "postgres" || !process.env.VERCEL, meta: m, llm: !!(process.env.GEMINI_API_KEY || process.env.LLM_API_KEY) }; },
   async overview(req) { return A.overview(await A.resolveCtx(asOf(req))); },
