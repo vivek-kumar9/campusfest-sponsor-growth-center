@@ -1,0 +1,170 @@
+{
+ "rates": {
+  "warm_std": 0.5810714285714285,
+  "inb_std": 0.4689041994750657,
+  "all_std": 0.5454583333333334,
+  "warm_adv_shift": 0.9069233312983315,
+  "inb_adv_shift": 0.8869548337707786,
+  "all_adv": 0.7818263888888888,
+  "all_adv_shift": 0.9005833333333335,
+  "renew_std": 0.8,
+  "renew_adv": 0.9333333333333333,
+  "cold_adv": 0.8041666666666667
+ },
+ "segments": [
+  {
+   "segment": "Renewals (2025 cash partners)",
+   "base": {
+    "prospects": 20,
+    "conv": 0.4,
+    "deals": 8.0,
+    "avg_deal": 100000,
+    "signed": 800000,
+    "coll_rate": 0.8,
+    "collected": 640000
+   },
+   "stretch": {
+    "prospects": 20,
+    "conv": 0.65,
+    "deals": 13.0,
+    "avg_deal": 110000,
+    "signed": 1430000,
+    "coll_rate": 0.933,
+    "collected": 1334667
+   }
+  },
+  {
+   "segment": "Warm intros (alumni, partners, creators)",
+   "base": {
+    "prospects": 30,
+    "conv": 0.467,
+    "deals": 14.0,
+    "avg_deal": 97500,
+    "signed": 1365000,
+    "coll_rate": 0.581,
+    "collected": 793162
+   },
+   "stretch": {
+    "prospects": 60,
+    "conv": 0.4,
+    "deals": 24.0,
+    "avg_deal": 97500,
+    "signed": 2340000,
+    "coll_rate": 0.907,
+    "collected": 2122201
+   }
+  },
+  {
+   "segment": "Inbound partner form",
+   "base": {
+    "prospects": 18,
+    "conv": 0.333,
+    "deals": 6.0,
+    "avg_deal": 105833,
+    "signed": 635000,
+    "coll_rate": 0.469,
+    "collected": 297754
+   },
+   "stretch": {
+    "prospects": 30,
+    "conv": 0.333,
+    "deals": 10.0,
+    "avg_deal": 105833,
+    "signed": 1058333,
+    "coll_rate": 0.887,
+    "collected": 938694
+   }
+  },
+  {
+   "segment": "Cold outbound (qualified first)",
+   "base": {
+    "prospects": 30,
+    "conv": 0.0,
+    "deals": 0.0,
+    "avg_deal": 55000,
+    "signed": 0,
+    "coll_rate": 0.804,
+    "collected": 0
+   },
+   "stretch": {
+    "prospects": 30,
+    "conv": 0.1,
+    "deals": 3.0,
+    "avg_deal": 55000,
+    "signed": 165000,
+    "coll_rate": 0.804,
+    "collected": 132688
+   }
+  }
+ ],
+ "totals": {
+  "base": {
+   "deals": 28.0,
+   "signed": 2800000.0,
+   "collected": 1730916.7
+  },
+  "stretch": {
+   "deals": 50.0,
+   "signed": 4993333.3,
+   "collected": 4528248.6
+  }
+ },
+ "attribution": [
+  {
+   "bet": "Advance-payment terms + 3-week earlier close calendar",
+   "incremental_collected": 816917
+  },
+  {
+   "bet": "Renewal-first program with ROI proof pack",
+   "incremental_collected": 588000
+  },
+  {
+   "bet": "Warm-intro engine (alumni + partner referrals)",
+   "incremental_collected": 884250
+  },
+  {
+   "bet": "Inbound engine (sponsor page + LinkedIn)",
+   "incremental_collected": 375478
+  },
+  {
+   "bet": "Cold reset: qualify-first + entry package",
+   "incremental_collected": 132688
+  }
+ ],
+ "base_collected": 1730917,
+ "stretch_collected": 4528249,
+ "payment_lag_cdf": [
+  [
+   0,
+   0.0
+  ],
+  [
+   15,
+   0.25
+  ],
+  [
+   30,
+   0.5
+  ],
+  [
+   45,
+   0.75
+  ],
+  [
+   60,
+   0.9
+  ],
+  [
+   90,
+   1.0
+  ]
+ ],
+ "history_2025": {
+  "cash_deals": 20,
+  "cash_value": 2000000,
+  "all_confirmed": 24,
+  "all_value": 2240000,
+  "share_cash_value_lt30d": 0.41,
+  "modeled_2025_collected_std": 1090917
+ }
+}
