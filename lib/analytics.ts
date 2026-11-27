@@ -319,19 +319,34 @@ export async function initiativeStatus(ctx: Ctx) {
 /** 2026 growth model (base vs stretch) from the editable assumptions table, with optional overrides. */
 export async function growthModel(overrides: Record<string, number> = {}) {
   const rows = await q(`select key, label, value, unit, source_tag, note from assumptions order by sort`);
-  const A: Record<string, number> = Object.fromEntries((rows as any[]).map((r) => [r.key, r.value]));
-  for (const [k, v] of Object.entries(overrides)) if (k in A && typeof v === "number" && isFinite(v)) A[k] = v;
-  const seg = (name: string, b: any, s: any) => ({ segment: name, base: calc(b), stretch: calc(s) });
+  const D: Record<string, number> = Object.fromEntries((rows as any[]).map((r) => [r.key, r.value]));
+  const A: Record<string, number> = { ...D };
+  const applied: Record<string, number> = {};
+  for (const [k, v] of Object.entries(overrides)) if (k in A && typeof v === "number" && isFinite(v)) { A[k] = v; applied[k] = v; }
   const calc = (p: any) => { const deals = p.n * p.conv; const signed = deals * p.deal; return { prospects: p.n, conv: r3(p.conv), deals: r1(deals), avg_deal: Math.round(p.deal), signed: Math.round(signed), collection_rate: r3(p.coll), collected: Math.round(signed * p.coll) }; };
-  const segments = [
-    seg("Renewals (2025 cash partners)", { n: A.renew_pool, conv: A.renew_rate_base, deal: A.renew_deal_base, coll: A.coll_std_renew }, { n: A.renew_pool, conv: A.renew_rate_stretch, deal: A.renew_deal_stretch, coll: A.coll_adv_renew }),
-    seg("Warm intros (alumni, partners, creators)", { n: A.warm_intros_base, conv: A.warm_conv_base, deal: A.warm_deal, coll: A.coll_std_warm }, { n: A.warm_intros_stretch, conv: A.warm_conv_stretch, deal: A.warm_deal, coll: A.coll_adv_warm }),
-    seg("Inbound partner form", { n: A.inbound_base, conv: A.inbound_conv, deal: A.inbound_deal, coll: A.coll_std_inbound }, { n: A.inbound_stretch, conv: A.inbound_conv, deal: A.inbound_deal, coll: A.coll_adv_inbound }),
-    seg("Cold outbound (qualified first)", { n: A.cold_qualified, conv: A.cold_conv_base, deal: A.cold_deal, coll: A.coll_adv_cold }, { n: A.cold_qualified, conv: A.cold_conv_stretch, deal: A.cold_deal, coll: A.coll_adv_cold }),
-  ];
-  const tot = (k: "base" | "stretch") => ({ deals: r1(segments.reduce((a, s) => a + (s[k].deals || 0), 0)), signed: segments.reduce((a, s) => a + s[k].signed, 0), collected: segments.reduce((a, s) => a + s[k].collected, 0) });
-  return { assumptions: rows.map((r: any) => ({ ...r, value: A[r.key] })), overridesApplied: overrides, segments, base: tot("base"), stretch: tot("stretch"),
-    budgetCap: A.growth_budget_cap, note: "Base = 2025 playbook repeated + renewals at the base rate, standard payment terms. Stretch = all five bets. Collection rates convert signed cash into cash received before the fest." };
+  const build = (X: Record<string, number>) => {
+    const seg = (name: string, b: any, st: any) => ({ segment: name, base: calc(b), stretch: calc(st) });
+    const segments = [
+      seg("Renewals (2025 cash partners)", { n: X.renew_pool, conv: X.renew_rate_base, deal: X.renew_deal_base, coll: X.coll_std_renew }, { n: X.renew_pool, conv: X.renew_rate_stretch, deal: X.renew_deal_stretch, coll: X.coll_adv_renew }),
+      seg("Warm intros (alumni, partners, creators)", { n: X.warm_intros_base, conv: X.warm_conv_base, deal: X.warm_deal, coll: X.coll_std_warm }, { n: X.warm_intros_stretch, conv: X.warm_conv_stretch, deal: X.warm_deal, coll: X.coll_adv_warm }),
+      seg("Inbound partner form", { n: X.inbound_base, conv: X.inbound_conv, deal: X.inbound_deal, coll: X.coll_std_inbound }, { n: X.inbound_stretch, conv: X.inbound_conv, deal: X.inbound_deal, coll: X.coll_adv_inbound }),
+      seg("Cold outbound (qualified first)", { n: X.cold_qualified, conv: X.cold_conv_base, deal: X.cold_deal, coll: X.coll_adv_cold }, { n: X.cold_qualified, conv: X.cold_conv_stretch, deal: X.cold_deal, coll: X.coll_adv_cold }),
+    ];
+    const tot = (k: "base" | "stretch") => ({ deals: r1(segments.reduce((a, s) => a + (s[k].deals || 0), 0)), signed: segments.reduce((a, s) => a + s[k].signed, 0), collected: segments.reduce((a, s) => a + s[k].collected, 0) });
+    return { segments, base: tot("base"), stretch: tot("stretch") };
+  };
+  const scenario = build(A);
+  const hasOverrides = Object.keys(applied).length > 0;
+  const def = hasOverrides ? build(D) : null;
+  return {
+    assumptions: rows.map((r: any) => ({ ...r, default_value: D[r.key], value: A[r.key], overridden: r.key in applied })),
+    overridesApplied: applied, segments: scenario.segments, base: scenario.base, stretch: scenario.stretch,
+    ...(def ? { default_model: { base: def.base, stretch: def.stretch }, change_vs_default: {
+      base_collected: scenario.base.collected - def.base.collected, stretch_collected: scenario.stretch.collected - def.stretch.collected,
+      base_signed: scenario.base.signed - def.base.signed, stretch_signed: scenario.stretch.signed - def.stretch.signed } } : {}),
+    budgetCap: A.growth_budget_cap,
+    note: "Base = 2025 playbook repeated + renewals at the base rate, standard payment terms. Stretch = all five bets. Collection rates convert signed cash into cash received before the fest." + (hasOverrides ? " This is a what-if scenario: 'default_value' is the saved assumption, 'value' is the value used here; compare with default_model." : ""),
+  };
 }
 
 export async function dataCoverage() {

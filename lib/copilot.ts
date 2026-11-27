@@ -123,6 +123,7 @@ payments(payment_id, opportunity_id, amount_inr, status received|invoiced, recei
 tasks(task_id, title, owner_id, due_date, status todo|in_progress|blocked|done, priority, related_type, related_id, initiative_id)
 initiatives(initiative_id I1..I5, rank, name, owner_id, budget_inr, spent_inr, expected_incremental_inr, confidence, effort_weeks, kpi_key, scale_threshold, stop_threshold)
 team(owner_id, owner_name); activations(brand_id, opportunity_id, attendee_campaign_name, linked_at); event(event_starts_at, event_ends_at, history_start, history_end)
+There is no SQL function for the growth model: use the get_growth_model tool.
 Helper functions (cut = exclusive cut-off; for date D use cut_of('D') = D+1 00:00):
 opp_state_asof(cut) -> (opportunity_id, stage, proposed_value_inr, confirmed_value_inr, owner_id, owner_name, stage_effective_at, history_id)
 brand_qual_asof(cut) -> (brand_id, qualification_status, reason, campaign_id, qual_effective_at)
