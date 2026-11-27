@@ -176,7 +176,7 @@ Total budget ₹2.2L of a ₹2.5L cap; 16.5 of ~20 person-weeks.
 - **Honesty**: `get_data_coverage` lists what is missing (bank receipts, spend, sponsor ROI, renewal history, loss reasons, geography, attendee data); the prompt requires naming the gap, giving a labelled proxy and saying what to record; small samples are flagged.
 - **Execution with confirmation**: proposals are stored as pending actions and rendered with Confirm / Reject; nothing changes until a person confirms. Confirmed actions write through the same validated mutations and appear in the audit log.
 - **Follow-ups**: the last 12 turns are sent with each request; the current snapshot date is passed in.
-- **Resilience**: model fallback list (configured model → `gemini-2.5-flash` → `gemini-flash-lite-latest`); if the LLM is unavailable, a clearly labelled offline mode returns computed diagnostics instead of a free-form answer.
+- **Speed and resilience**: model order `gemini-3.5-flash-lite` → `gemini-flash-lite-latest` → `gemini-3.1-flash-lite` → `gemini-3.5-flash` → `gemini-flash-latest` (on the free tier the thinking-heavy flash models took >6 s even for a one-word reply, and the 2.5 models are closed to new keys). Each call has a 15 s timeout, each answer a 40 s budget, and the working model is remembered across requests. If no model answers, a clearly labelled offline mode returns computed diagnostics instead of a free-form answer.
 
 ### Demo workflow (what to try)
 1. Ask: "Are we on track for the confirmed-partnership target? What's driving the gap?"
@@ -221,12 +221,18 @@ npm run check                # prints the reference metrics from the analytics l
 
 Supabase works the same way: set `DATABASE_URL` to the "Transaction pooler" connection string.
 
+### Check endpoints
+- `GET /api/health`: database mode, persistence, seed version, AI key present
+- `GET /api/llm-check`: which models the configured key can use right now
+- `GET /api/ask?q=...&asOf=YYYY-MM-DD`: runs one copilot question and returns the answer, tool trace, model and timing
+
 ### Environment variables
 | Name | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` (or `POSTGRES_URL`) | for persistence in production | Postgres URI; pooled URLs work (`prepare: false`) |
 | `GEMINI_API_KEY` | for the copilot | Without it the copilot runs in offline diagnostics mode |
-| `GEMINI_MODEL` | no | Default `gemini-flash-latest` |
+| `GEMINI_MODEL` | no | Put a model first in the fallback order (default order starts with `gemini-3.5-flash-lite`) |
+| `LLM_REASONING` | no | `on` sends `reasoning_effort: low` (slower); default `off` |
 | `LLM_BASE_URL`, `LLM_API_KEY` | no | Any OpenAI-compatible endpoint with tool calling |
 
 ---
@@ -235,7 +241,14 @@ Supabase works the same way: set `DATABASE_URL` to the "Transaction pooler" conn
 - **Numbers**: `analysis/analyze.py` (pandas, from the Excel) and the app's SQL produce identical snapshots for 15 Feb, 14 Mar, 15 Mar, 31 Mar, 11 Apr and latest (qualified, confirmed count/value, open pipeline, target version).
 - **Databases**: tested on embedded PGlite and on a real Postgres server (same results, including concurrent cold starts that seed only once).
 - **Writes**: stage changes, payments, tasks, campaigns, brands, qualification, interactions, targets, initiative edits, assumptions and reset were exercised through the API and checked in the analytics.
-- **Copilot**: the agent loop, tool execution, SQL guard (a `delete` attempt is rejected) and the confirm/reject flow were tested against a scripted OpenAI-compatible mock. The live Gemini model could not be reached from the build environment, so answer quality was tuned by prompt and tool design and should be spot-checked with the questions above after deploying.
+- **Copilot, offline**: the agent loop, tool execution, SQL guard (a `delete` attempt is rejected) and the confirm/reject flow were tested against a scripted OpenAI-compatible mock.
+- **Copilot, live** (deployed app, `gemini-3.5-flash-lite`, answers checked against the data):
+  - "Which stalled deals should we follow up first? Create tasks for the top 3." → Cedar Pantry ₹1,10,000 (33.5 days in negotiation), Evergreen Pantry ₹90,000 (47.5), Daybreak Pantry ₹90,000 (56.5); 3 tasks proposed for confirmation; 4.8 s.
+  - "Qualified brands as of 14 March 2025 vs the goal in force?" → 53 vs 40 (launch plan); 1.9 s.
+  - "Which campaign has the best ROI?" → says spend is not tracked, uses confirmed value per touch as a labelled proxy, names Creator Network Referrals; 3.0 s.
+  - "Stretch cash if renewals come in at 50%?" → ₹45,27,875 → ₹42,19,985 (−₹3,07,890), labelled as assumptions; 2.0 s.
+  - "Did the Beardo activation increase attendance?" → attendance data is not in the dataset; the link is an association only; 3.0 s.
+  - "How much cash have we actually collected?" → ₹0 recorded; ₹20,00,000 confirmed cash is not proof of receipt.
 
 ## 9. Tools used
 - Claude (Anthropic) as a coding and analysis assistant: data profiling, SQL, app code, copy. All numbers were re-computed and cross-checked between Python and SQL.
